@@ -494,7 +494,7 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                  ## Model parameters --------------------------------------------------------
                  tabPanel("Générer des prévisions",
                           fluidRow(
-                              column(3,
+                              column(2,
                                      selectInput("column_to_predict", "Variable que l'on cherche à prédire :",
                                                  c("Fréquentation réelle" = "reel", 
                                                    "Commandes par les écoles" = "prevision")),
@@ -516,7 +516,7 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                                                format = "dd/mm/yyyy",
                                                language = "fr",
                                                weekstart = 1)),
-                              column(5,
+                              column(2,
                                      sliderInput("confidence", "Niveau de confiance :",
                                                  min = 0, max = 1, value = 0.9, step = 0.01),
                                      br(), br(),
@@ -525,8 +525,8 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                                      br(), br(),
                                      selectInput("training_type", "Algorithme de prédiction :",
                                                  c("XGBoost avec intervalle de confiance" = "xgb_interval",
-                                                   "XGBoost simple" = "xgb"))),
-                              column(4,
+                                                   "XGBoost simple" = "xgb"), width = "100%")),
+                              column(2,
                                      checkboxGroupInput("model_options", "Autres options",
                                                         c("Réexécuter la préparation des données" = "preprocessing", 
                                                           "Ne pas prédire les jours sans école" = "remove_no_school", 
@@ -909,6 +909,7 @@ server <- function(session, input, output) {
                                               prevision_s = prevision, 
                                               reel_s = reel, site_nom
                                           )) %>%
+          mutate(site_id = as.character(site_id)) %>%
             dplyr::anti_join(dt()$freqs)
         
         nrows_to_add <- nrow(to_add)
