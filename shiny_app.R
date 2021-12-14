@@ -1,4 +1,9 @@
+# Needs shiny version >= 1.7.1 to run
+if (compareVersion(installed.packages()["shiny",3], "1.7.1") < 0) {
+  update.packages("shiny")
+}
 # Set parameters -------------------------------------------------------------
+
 
 pkgs_to_load <- "shiny"
 pkgs_not_load <- c("shiny","purrr", "DT", "readr", "arrow", 
@@ -98,7 +103,7 @@ freq_id = "244400404_nombre-convives-jour-cantine-nantes-2011"
 freq_od <- od_url(portal = portal, dataset_id = freq_id)
 freq_od_temp_loc <- "temp/freq_od.csv"
 
-menus_id <- "244400404_menus-cantines-nantes-2011-2019"
+menus_id <- "244400404_menus-cantines-nantes-depuis-2011"
 menus_od <- od_url(portal = portal, dataset_id = menus_id)
 menus_od_temp_loc <- "temp/menus_od.csv"
 
