@@ -914,7 +914,7 @@ server <- function(session, input, output) {
                                               prevision_s = prevision, 
                                               reel_s = reel, site_nom
                                           )) %>%
-          mutate(site_id = as.character(site_id)) %>%
+          dplyr::mutate(site_id = as.character(site_id)) %>%
             dplyr::anti_join(dt()$freqs)
         
         nrows_to_add <- nrow(to_add)
