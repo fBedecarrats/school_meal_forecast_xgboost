@@ -761,22 +761,24 @@ server <- function(session, input, output) {
     })
     
     output$dwn_filtered <- downloadHandler(
-        filename = function() {
-            paste("previsions_", 
-                  input$select_period, "_", 
-                  input$select_year, "_",
-                  input$select_cafet, ".csv", sep="")
-        },
-        content = function(file) {
-          readODS::write_ods(out_filtered_dt(), file)
-        }
+      filename = function() {
+        paste("previsions_", 
+              input$select_period, "_", 
+              input$select_year, "_",
+              input$select_cafet, ".ods", sep="")
+      },
+      content = function(file) {
+        readODS::write_ods(out_filtered_dt(), file)
+      }
     )
     
     ## Consult results -----------------------------------------------------
     
     
     output$plot <- plotly::renderPlotly({
-        dt2 <- filtered_dt()
+      dt2 <- filtered_dt() %>% # only keep days with lunches
+        tidyr::pivot_longer(-Date, values_to = "Repas", names_to = "Source") %>%
+        dplyr::mutate(Type = ifelse(Source == "reel", "reel", "prevision"))
         static <- dt2 %>%
             ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, color = Source, fill = Source)) +
             ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "prevision"))) +
