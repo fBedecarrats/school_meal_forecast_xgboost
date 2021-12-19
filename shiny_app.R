@@ -630,6 +630,16 @@ server <- function(session, input, output) {
         return(filtered)
     })
     
+    out_filtered_prev <- reactive({
+      out <- filtered_prev()
+      out <- out %>%
+        dplyr::mutate(Jour = lubridate::wday(Date, label = TRUE, abbr = FALSE),
+                      Date = format(Date, "%d/%m/%Y")) %>%
+        dplyr::select(Date, Jour, Repas) %>%
+        dplyr::filter(Jour %in% c("lundi", "mardi", "jeudi", "vendredi"))
+      return(out)
+    })
+    
     
     filtered_dt <- reactive({
         # Filter parameters
@@ -762,7 +772,7 @@ server <- function(session, input, output) {
                   input$select_cafet, ".csv", sep="")
         },
         content = function(file) {
-            write.csv(filtered_prev(), file)
+          readODS::write_ods(out_filtered_prev(), file)
         }
     )
     
