@@ -615,67 +615,63 @@ server <- function(session, input, output) {
     })
     
     filtered_prev <- reactive({ # Filtering the prevision based on parameters
-        date_start <- lubridate::ymd(selected_dates()[[1]])
-        date_end <- lubridate::ymd(selected_dates()[[2]])
-        filtered <- prev() %>%
-            dplyr::mutate(date_str = lubridate::ymd(date_str)) %>%
-            dplyr::filter(date_str >= date_start & date_str <= date_end)
-        if (selected_cafet() != "Tous") {
-            filtered <- filtered %>%
-                dplyr::filter(site_nom == selected_cafet())
-        }
+      date_start <- lubridate::ymd(selected_dates()[[1]])
+      date_end <- lubridate::ymd(selected_dates()[[2]])
+      filtered <- prev() %>%
+        dplyr::mutate(date_str = lubridate::ymd(date_str)) %>%
+        dplyr::filter(date_str >= date_start & date_str <= date_end)
+      if (selected_cafet() != "Tous") {
         filtered <- filtered %>%
-            dplyr::group_by(Date = lubridate::ymd(date_str)) %>%
-            dplyr::summarise(Repas = sum(output, na.rm = TRUE))
-        return(filtered)
-    })
-    
-    out_filtered_prev <- reactive({
-      out <- filtered_prev()
-      out <- out %>%
-        dplyr::mutate(Jour = lubridate::wday(Date, label = TRUE, abbr = FALSE),
-                      Date = format(Date, "%d/%m/%Y")) %>%
-        dplyr::select(Date, Jour, Repas) %>%
-        dplyr::filter(Jour %in% c("lundi", "mardi", "jeudi", "vendredi"))
-      return(out)
+          dplyr::filter(site_nom == selected_cafet())
+      }
+      filtered <- filtered %>%
+        dplyr::group_by(Date = lubridate::ymd(date_str)) %>%
+        dplyr::summarise(Repas = sum(output, na.rm = TRUE))
+      return(filtered)
     })
     
     
     filtered_dt <- reactive({
-        # Filter parameters
-        # selected_cafet <- "Tous"
-        # selected_dates <- c("2019-01-01", "2019-04-15")
-        date_start <- lubridate::ymd(selected_dates()[[1]])
-        date_end <- lubridate::ymd(selected_dates()[[2]])
-        cafet <- input$select_cafet
-        # previsions for selected dates
-        filtered_prevs <- prev() %>%
-            dplyr::mutate(Date = lubridate::as_date(date_str)) %>%
-            dplyr::rename(site_nom = cantine_nom) %>%
-            dplyr::filter(Date >= date_start & Date <= date_end)
-        # attendance for selected dates
-        filtered_freqs <- dt()$freqs %>%
-            dplyr::mutate(Date = lubridate::as_date(date)) %>%
-            dplyr::filter(Date >= date_start & Date <= date_end)
-        # consolidating
-        join_filtered <- filtered_freqs %>%
-            dplyr::full_join(filtered_prevs, by = c("Date", "site_nom"))
-        # Filtering on cafeteria
-        if (cafet != "Tous") {
-            join_filtered <- join_filtered %>%
-                dplyr::filter(site_nom == cafet)
-        }
-        
-        filtered <- join_filtered  %>%
-            dplyr::group_by(Date) %>%
-            dplyr::summarise(`prevision_modele` = sum(output, na.rm = TRUE),
-                             `prevision_agents` = sum(prevision, na.rm = TRUE),
-                             `reel` = sum(reel, na.rm = TRUE)) %>%
-            dplyr::ungroup() %>% # needed to filter at follwing line
-            dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) %>% # only keep days with lunches
-            tidyr::pivot_longer(-Date, values_to = "Repas", names_to = "Source") %>%
-            dplyr::mutate(Type = ifelse(Source == "reel", "reel", "prevision"))
-        return(filtered)
+      # Filter parameters
+      # selected_cafet <- "Tous"
+      # selected_dates <- c("2019-01-01", "2019-04-15")
+      date_start <- lubridate::ymd(selected_dates()[[1]])
+      date_end <- lubridate::ymd(selected_dates()[[2]])
+      cafet <- input$select_cafet
+      # previsions for selected dates
+      filtered_prevs <- prev() %>%
+        dplyr::mutate(Date = lubridate::as_date(date_str)) %>%
+        dplyr::rename(site_nom = cantine_nom) %>%
+        dplyr::filter(Date >= date_start & Date <= date_end)
+      # attendance for selected dates
+      filtered_freqs <- dt()$freqs %>%
+        dplyr::mutate(Date = lubridate::as_date(date)) %>%
+        dplyr::filter(Date >= date_start & Date <= date_end)
+      # consolidating
+      join_filtered <- filtered_freqs %>%
+        dplyr::full_join(filtered_prevs, by = c("Date", "site_nom"))
+      # Filtering on cafeteria
+      if (cafet != "Tous") {
+        join_filtered <- join_filtered %>%
+          dplyr::filter(site_nom == cafet)
+      }
+      
+      filtered <- join_filtered  %>%
+        dplyr::group_by(Date) %>%
+        dplyr::summarise(`prevision_modele` = sum(output, na.rm = TRUE),
+                         `prevision_agents` = sum(prevision, na.rm = TRUE),
+                         `reel` = sum(reel, na.rm = TRUE)) %>%
+        dplyr::ungroup() %>% # needed to filter at follwing line
+        dplyr::filter(if_any(where(is.numeric), ~ .x > 0))
+      return(filtered)
+    })
+    
+    out_filtered_dt <- reactive({
+      filtered_dt() %>%
+        dplyr::mutate(Jour = lubridate::wday(Date, label = TRUE, abbr = FALSE),
+                      Date = format(Date, "%d/%m/%Y")) %>%
+        dplyr::select(Date, Jour, everything()) %>%
+        dplyr::filter(Jour %in% c("lundi", "mardi", "jeudi", "vendredi"))
     })
     
     last_prev <- reactive ({
@@ -772,7 +768,7 @@ server <- function(session, input, output) {
                   input$select_cafet, ".csv", sep="")
         },
         content = function(file) {
-          readODS::write_ods(out_filtered_prev(), file)
+          readODS::write_ods(out_filtered_dt(), file)
         }
     )
     
