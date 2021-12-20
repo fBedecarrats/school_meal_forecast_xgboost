@@ -658,11 +658,13 @@ server <- function(session, input, output) {
       
       filtered <- join_filtered  %>%
         dplyr::group_by(Date) %>%
-        dplyr::summarise(`prevision_modele` = sum(output, na.rm = TRUE),
-                         `prevision_agents` = sum(prevision, na.rm = TRUE),
-                         `reel` = sum(reel, na.rm = TRUE)) %>%
+        dplyr::summarise(`prevision_frequentation` = sum(output, na.rm = TRUE),
+                         `reel_commandes` = sum(prevision, na.rm = TRUE),
+                         `reel_frequentation` = sum(reel, na.rm = TRUE)) %>%
         dplyr::ungroup() %>% # needed to filter at follwing line
-        dplyr::filter(if_any(where(is.numeric), ~ .x > 0))
+        dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) %>% # only keep days with lunches
+        tidyr::pivot_longer(-Date, values_to = "Repas", names_to = "Source") # %>%
+      # dplyr::mutate(Type = ifelse(Source == "reel", "reel", "prevision"))
       return(filtered)
     })
     
@@ -776,20 +778,31 @@ server <- function(session, input, output) {
     
     
     output$plot <- plotly::renderPlotly({
-      dt2 <- filtered_dt() %>% # only keep days with lunches
-        tidyr::pivot_longer(-Date, values_to = "Repas", names_to = "Source") %>%
-        dplyr::mutate(Type = ifelse(Source == "reel", "reel", "prevision"))
-        static <- dt2 %>%
-            ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, color = Source, fill = Source)) +
-            ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "prevision"))) +
-            ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "reel")),
-                              ggplot2::aes(x = Date, y = Repas), stat = "identity") +
-            ggplot2::theme(axis.title.x=ggplot2::element_blank()) 
-        
-        plotly::ggplotly(static) %>%
-            plotly::config(displayModeBar = FALSE) %>%
-            plotly::layout(legend = list(orientation = "h", x = 0, y = 1.1))
-        
+      dt2 <- filtered_dt()
+      static <- dt2 %>%
+        ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, color = Source)) +
+        ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")) %>%
+                            dplyr::mutate(Repas = Repas + 1000,
+                                          Source = "prevision_commandes"),
+                          ggplot2::aes(x = Date, y = Repas, alpha = 0.5),
+                          stat = "identity") +
+        ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")),
+                          ggplot2::aes(x = Date, y = Repas, alpha = 0.5),
+                          stat = "identity") +
+        ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "reel_commandes"))) +
+        ggplot2::geom_point(data = subset(dt2, stringr::str_starts(Source, "reel_commandes"))) +
+        ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "reel_freq"))) +
+        ggplot2::geom_point(data = subset(dt2, stringr::str_starts(Source, "reel_freq"))) +
+        ggplot2::theme(axis.title.x=ggplot2::element_blank()) +
+        # ggplot2::scale_fill_manual(values = c("red", "blue", "red", "blue")) + 
+        # ggplot2::scale_color_manual(values = c("red", "mediumpurple4", "green", "purple"))
+        ggplot2::scale_fill_manual(values = c("red", "green", "red", "green")) + 
+        ggplot2::scale_color_manual(values = c("red", "green3", "red3", "green4"))
+      
+      plotly::ggplotly(static, tooltip = c("x", "y", "fill")) %>%
+        plotly::config(displayModeBar = FALSE) %>%
+        plotly::layout(legend = list(orientation = "h", x = 0, y = 1.1))
+      
     })
     
     
