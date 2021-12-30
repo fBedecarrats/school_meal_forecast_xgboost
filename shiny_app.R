@@ -384,6 +384,48 @@ sync_ssp_cloud <- function(folders) {
   }
 }
 
+# A function to check that mapping include all occurrences and display a 
+# meaningful message
+not_in <- function(x, y, index = index) {
+  # extract function argument
+  my_x <- deparse(substitute(x))
+  my_y <- deparse(substitute(y))
+  # check that arguments literals have the right format
+  if (!(stringr::str_detect(my_x, "(.*[:alpha:]|_)*\\$.*$") & 
+        stringr::str_detect(my_y, "([:alpha:]|_)*\\$.*$"))) {
+    print(my_x)
+    print(my_y)
+    print("argument for {not in} must look like 'dataframe$column'")
+    stop()
+  }
+  # parse argument to provide helpful messages
+  # left part of the argument
+  x_ds <- my_x %>%
+    stringr::str_remove("dt\\(\\)\\$") %>%
+    stringr::str_extract("([:alpha:]|_)*\\$") %>%
+    stringr::str_remove("\\$")
+  y_ds <- my_y %>%
+    stringr::str_remove("dt\\(\\)\\$") %>%
+    stringr::str_extract("([:alpha:]|_)*\\$") %>%
+    stringr::str_remove("\\$")
+  # right part of the function argument
+  x_col <- stringr::str_extract(my_x, "([:alpha:]|_)*$")
+  y_col <- stringr::str_extract(my_y, "([:alpha:]|_)*$")
+  # Extract the missmatches
+  x <- unique(x)
+  missings <- x[!(x %in% y)]
+  n_miss <- length(missings)
+  
+  # Prepare message element
+  if (n_miss > 0) {
+    out <- paste0(n_miss, " établissement(s) mentionné(s) dans le champ ",
+                  x_col, " du fichier ", my_x,
+                  " mais pas dans le champ ", y_col,
+                  " du fichier ", my_y, " : ",
+                  paste(missings, collapse = ", "), ".")
+  }
+}
+
 # UI ----------------------------------------------------------------------
 ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                  theme = bslib::bs_theme(bootswatch = "simplex", version = 5),
@@ -492,6 +534,8 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                                   width = 3),
                               mainPanel(actionButton("process_inventory", 
                                                      "Inventorier les données disponibles"),
+                                        actionButton("check_mappings", 
+                                                     "Vérifier les tables de correspondance"),
                                         plotOutput("available_data"))
                           )
                  ),
@@ -1157,6 +1201,31 @@ server <- function(session, input, output) {
                               nrow(new_hc), 
                               "effectifs d'écoles."),
                  type = "success")
+    })
+    
+    ### Check mappings -------------------------------------------------
+    observeEvent(input$check_mappings, {
+      # check mapping  mapping_frequentation_cantines.csv
+      freqs_notin_mfreqs <- not_in(dt()$freqs$site_nom, dt()$map_freqs$site_nom)
+      cafets_notin_mfreqs <- not_in(dt()$cafets$cantine_nom, dt()$map_freqs$cantine_nom)
+      # check mapping mapping_ecoles_cantines.csv
+      effs_notin_mschools <- not_in(dt()$effs$ecole, dt()$map_schools$ecole)
+      cafets_notin_mschools <- not_in(dt()$cafets$cantine_nom, dt()$map_schools$cantine_nom)
+      # Display result
+      map_check_msg <- paste(c(freqs_notin_mfreqs, cafets_notin_mfreqs, effs_notin_mschools, 
+                               cafets_notin_mschools), collapse = "\n")
+      if (map_check_msg != "") {
+        shinyalert(title = "Tables de correspondances incomplètes",
+                   text = map_check_msg,
+                   type = "warning")
+      } else {
+        shinyalert(title = "Les tables de correspondances sont en ordre",
+                   text = "Pas d'incohérences relevées.",
+                   type = "success")
+      }
+      
+      
+      
     })
     
     ## Launch model ------------------------------------------------------------
