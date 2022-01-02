@@ -4,7 +4,9 @@ Télécharger les menus depuis l'open data
 Charger les grèves depuis un fichier local
 Charger les effectifs depuis l'open data
 
-
+Tests :
+- Formats (dates dans freqs)
+- mappings
 
 # BUG APRES TEST -----------------------------------
 Mise à jour du graph de disponibilité.
