@@ -1,3 +1,5 @@
+# shiny::reactiveConsole(enabled = TRUE)
+
 # Needs shiny version >= 1.7.1 to run
 if (compareVersion(installed.packages()["shiny",3], "1.7.1") < 0) {
   update.packages("shiny")
@@ -683,39 +685,47 @@ server <- function(session, input, output) {
     
     
     filtered_dt <- reactive({
+      # parameters for debugging without shiny ui-server
+      # cafet <- "Tous" # for debugging only
+      # selected_dates <- c("2019-01-01", "2019-04-15") # for debugging only
+      
       # Filter parameters
-      # selected_cafet <- "Tous"
-      # selected_dates <- c("2019-01-01", "2019-04-15")
       date_start <- lubridate::ymd(selected_dates()[[1]])
       date_end <- lubridate::ymd(selected_dates()[[2]])
       cafet <- input$select_cafet
       # previsions for selected dates
       filtered_prevs <- prev() %>%
-        dplyr::mutate(Date = lubridate::as_date(date_str)) %>%
-        dplyr::rename(site_nom = cantine_nom) %>%
+        dplyr::mutate(Date = lubridate::as_date(date_str),
+                      Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
+                                                variable == "prevision" ~ "prevision_commandes")) %>%
+        dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
         dplyr::filter(Date >= date_start & Date <= date_end)
+      
       # attendance for selected dates
       filtered_freqs <- dt()$freqs %>%
         dplyr::mutate(Date = lubridate::as_date(date)) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end)
-      # consolidating
+        dplyr::filter(Date >= date_start & Date <= date_end) %>%
+        dplyr::select(Date, site_nom, reel, prevision) %>%
+        tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
+        dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
+                                                Source == "prevision" ~ "reel_commandes"))
+      
+      # bind frequentation and previsions
       join_filtered <- filtered_freqs %>%
-        dplyr::full_join(filtered_prevs, by = c("Date", "site_nom"))
+        dplyr::bind_rows(filtered_prevs)
+      
       # Filtering on cafeteria
       if (cafet != "Tous") {
         join_filtered <- join_filtered %>%
           dplyr::filter(site_nom == cafet)
       }
       
+      # Summarise for global or per cafeteria
       filtered <- join_filtered  %>%
-        dplyr::group_by(Date) %>%
-        dplyr::summarise(`prevision_frequentation` = sum(output, na.rm = TRUE),
-                         `reel_commandes` = sum(prevision, na.rm = TRUE),
-                         `reel_frequentation` = sum(reel, na.rm = TRUE)) %>%
-        dplyr::ungroup() %>% # needed to filter at follwing line
-        dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) %>% # only keep days with lunches
-        tidyr::pivot_longer(-Date, values_to = "Repas", names_to = "Source") # %>%
-      # dplyr::mutate(Type = ifelse(Source == "reel", "reel", "prevision"))
+        dplyr::group_by(Date, Source) %>%
+        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE)) %>%
+        dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) 
+      
       return(filtered)
     })
     
@@ -830,25 +840,22 @@ server <- function(session, input, output) {
     
     output$plot <- plotly::renderPlotly({
       dt2 <- filtered_dt()
+      
       static <- dt2 %>%
         ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, color = Source)) +
-        ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")) %>%
-                            dplyr::mutate(Repas = Repas + 1000,
-                                          Source = "prevision_commandes"),
-                          ggplot2::aes(x = Date, y = Repas, alpha = 0.5),
-                          stat = "identity") +
         ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")),
                           ggplot2::aes(x = Date, y = Repas, alpha = 0.5),
-                          stat = "identity") +
+                          stat = "identity",
+                          position = "dodge2") +
         ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "reel_commandes"))) +
         ggplot2::geom_point(data = subset(dt2, stringr::str_starts(Source, "reel_commandes"))) +
         ggplot2::geom_line(data = subset(dt2, stringr::str_starts(Source, "reel_freq"))) +
         ggplot2::geom_point(data = subset(dt2, stringr::str_starts(Source, "reel_freq"))) +
-        ggplot2::theme(axis.title.x=ggplot2::element_blank()) +
-        # ggplot2::scale_fill_manual(values = c("red", "blue", "red", "blue")) + 
-        # ggplot2::scale_color_manual(values = c("red", "mediumpurple4", "green", "purple"))
+        ggplot2::theme(axis.title.x=ggplot2::element_blank(), 
+                       axis.text.x = ggplot2::element_text(angle = 45, vjust = 0.5)) +
         ggplot2::scale_fill_manual(values = c("red", "green", "red", "green")) + 
-        ggplot2::scale_color_manual(values = c("red", "green3", "red3", "green4"))
+        ggplot2::scale_color_manual(values = c("red", "green3", "red3", "green4")) +
+        ggplot2::scale_x_date(date_breaks = "1 day", date_labels = "%a %d %b")
       
       plotly::ggplotly(static, tooltip = c("x", "y", "fill")) %>%
         plotly::config(displayModeBar = FALSE) %>%
