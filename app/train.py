@@ -4,6 +4,7 @@
 # -----------------------------------------------------------
 import math
 import os
+import datetime
 
 import pandas as pd
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
@@ -204,8 +205,10 @@ def train_and_predict(column_to_predict, training_type, min_date, max_date, begi
     preds[column_to_predict] = preds[column_to_predict].fillna(0)
     preds["prevision"] = preds["prevision"].fillna(0)
     preds["output"] = preds['output'].fillna(0)
+    
+    pred_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
 
-    export_predictions(preds, "output", f"results_detailed_{column_to_predict}_{begin_date}_{end_date}.csv")
+    export_predictions(preds, "output", f"results_detailed_{column_to_predict}_{training_type}_{begin_date}_{end_date}_{pred_time}.csv")
     export_predictions(
         preds.groupby(["date_str"])['output'].agg('sum'),
         "output",
@@ -213,7 +216,7 @@ def train_and_predict(column_to_predict, training_type, min_date, max_date, begi
     export_predictions(
         preds.groupby(["date_str", "cantine_nom", "cantine_type"])['output'].agg('sum'),
         "output",
-        f"results_by_cafeteria_{column_to_predict}_{begin_date}_{end_date}.csv")
+        f"results_by_cafeteria_{column_to_predict}_{training_type}_{begin_date}_{end_date}_{pred_time}.csv")
 
     if is_data_evaluable:
         print("######## The app has run on existing data, results will be evaluated. ########")
