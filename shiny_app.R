@@ -294,7 +294,9 @@ transform_fusion <- function(x, check_against) {
     tidyr::pivot_wider(names_from = convive, values_from = c(reel, prev),
                        values_fill = 0) %>%
     dplyr::mutate(reel = reel_maternelle + reel_grande_section + reel_primaire + reel_adulte,
-                  prevision = prev_maternelle + prev_grande_section + prev_primaire + prev_adulte)
+                  prevision = prev_maternelle + prev_grande_section + prev_primaire + prev_adulte,
+                  date = lubridate::date(date)) # %>%
+    # dplyr::select(site_id, site_nom, site_type, date, prevision, reel)
 }
 
 load_fusion <- function(x, freqs) {
