@@ -50,6 +50,26 @@ map_freq <- dt()$map_freq
 miss_map_freq <- cafets %>%
   dplyr::filter(!(cantine_nom %in% map_freq$cantine_nom))
 
+freqs_notin_mfreqs <- not_in(dt()$freqs$site_nom, dt()$map_freqs$site_nom)
+
+
+miss_freqs <- dt()$freqs %>%
+  dplyr::filter(date >= lubridate::ymd("2016-09-01")) %>%
+  dplyr::select(site_nom, site_type) %>%
+  unique() %>%
+  dplyr::filter(!(site_nom %in% map_freq$site_nom))
+  
+readr::write_csv(miss_freqs, "miss_freqs.csv")
+#manually filled
+miss_freqs <- readr::read_csv("miss_freqs.csv")
+
+map_freq2 <- map_freq %>%
+  dplyr::bind_rows(miss_freqs)
+
+map_freq2 %>%
+  readr::write_csv(index$path[index$name == "map_freqs"],
+                   na = "")
+
 # Leloup bouhier
 # baker
 effs <- dt()$effs
