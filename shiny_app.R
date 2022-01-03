@@ -173,11 +173,20 @@ load_results <- function(folder = "output", pattern = "results_by_cafeteria.*csv
     dplyr::arrange(desc(created), desc(training_type)) %>%
     dplyr::distinct(date_str, variable, cantine_nom, cantine_type, .keep_all = TRUE)
 }
+# A function to retrieve results' timestamps
+check_results_fresh <- function(folder = "output", pattern = "results_by_cafeteria.*csv") {
+    file.info(dir(folder, pattern, full.names = TRUE))$ctime
+}
 
 # A function to load the input data. Defaults to the index specified above
-load_data <- function(name = index$name, path = index$path) {
+load_traindata <- function(name = index$name, path = index$path) {
     dt <- purrr::map(path, ~ arrow::read_csv_arrow(.)) %>%
         purrr::set_names(name)
+}
+
+# A function to retrieve training data time stamps
+check_traindata_fresh <- function(path = index$path) {
+  file.info(path)$ctime
 }
 
 # A function to generate inter-vacation periods from the vacation calendar
@@ -648,8 +657,12 @@ server <- function(session, input, output) {
     # Reactive values for result display -----------------------------------
     
     
-    prev <- reactive({ load_results() }) # Previsions
-    dt <- reactive({ load_data() }) # training data
+    prev <- reactivePoll(5000, session, 
+                         function() check_results_fresh(), 
+                         function() load_results()) # Previsions
+    dt <- reactivePoll(5000, session, 
+                       function() check_traindata_fresh(), 
+                       function() load_traindata()) # training data
     vacs <- reactive({ return(dt()$vacs) }) # vacations
     pivs <- reactive({ gen_piv(vacs()) }) # Period between vacations
     cafets <- reactive({ c("Tous", # List of cafeteria
@@ -1028,6 +1041,10 @@ server <- function(session, input, output) {
         #                                             "LIBCON","TOTEFFREE", "TOTEFFPREV")) %>%
         #     transform_fusion(check_against = dt()$map_freqs$cantine_nom) %>%
         #     load_fusion(freqs = dt()$freqs)
+      shinyalert(title = "Cette fonction est temporairement désactivée",
+                 text = paste("Un correctif doit être apporté pour que cette",
+                              "fonctionnalité soit rétablie."),
+                 type = "error")
     })
     
     
