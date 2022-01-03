@@ -890,7 +890,8 @@ server <- function(session, input, output) {
       }
       
       static <- dt2 %>%
-        ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, color = Source)) +
+        ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, 
+                                     color = Source, ymin = 0)) +
         ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")),
                           ggplot2::aes(x = Date, y = Repas, alpha = 0.5),
                           stat = "identity",
