@@ -1035,6 +1035,8 @@ server <- function(session, input, output) {
     observeEvent(input$add_effs_real_od, {
         httr::GET(freq_od, # httr_progress(waitress_od),
                   httr::write_disk(freq_od_temp_loc, overwrite = TRUE))
+      freqs <- dt()$freqs %>%
+        dplyr::mutate(site_id = as.character(site_id))
         to_add <- arrow::read_delim_arrow(freq_od_temp_loc, delim = ";",
                                           col_select = c(
                                               site_id, site_type, date, 
@@ -1042,12 +1044,12 @@ server <- function(session, input, output) {
                                               reel_s = reel, site_nom
                                           )) %>%
           dplyr::mutate(site_id = as.character(site_id)) %>%
-            dplyr::anti_join(dt()$freqs)
+            dplyr::anti_join(freqs)
         
         nrows_to_add <- nrow(to_add)
         ndays_to_add <- length(unique(to_add$date))
         to_add %>%
-            dplyr::bind_rows(dt()$freqs) %>%
+            dplyr::bind_rows(freqs) %>%
             readr::write_csv(index$path[index$name == "freqs"])
         
         update_mapping_cafet_freq(to_add)
@@ -1059,13 +1061,6 @@ server <- function(session, input, output) {
                                 ndays_to_add,
                                 "jours de service."),
                    type = "success")
-        shinyalert(title = "Mise à jour du graphique impossible",
-                   text = paste("Un problème technique empêche la mise à jour",
-                                "du graphique indiquant la disponibilité des données.",
-                                "Les nouvelles données ajoutées seront visibles après",
-                                "le redémarrage de l'application"),
-                   type = "warning")
-        
     })
     ### Import attendance parquet ---------------------------------------------
     # Manually load datafile
@@ -1277,9 +1272,12 @@ server <- function(session, input, output) {
       # check mapping mapping_ecoles_cantines.csv
       effs_notin_mschools <- not_in(dt()$effs$ecole, dt()$map_schools$ecole)
       cafets_notin_mschools <- not_in(dt()$cafets$cantine_nom, dt()$map_schools$cantine_nom)
+      # check that mapped cafets appear in the list cantines.csv
+      mschools_notin_cafets <- not_in(dt()$map_schools$cantine_nom, dt()$cafets$cantine_nom)
+      mfreqs_notin_cafets <- not_in(dt()$map_freqs$cantine_nom, dt()$cafets$cantine_nom)
       # Display result
       map_check_msg <- paste(c(freqs_notin_mfreqs, cafets_notin_mfreqs, effs_notin_mschools, 
-                               cafets_notin_mschools), collapse = "\n")
+                               cafets_notin_mschools, mschools_notin_cafets), collapse = "\n")
       if (map_check_msg != "") {
         shinyalert(title = "Tables de correspondances incomplètes",
                    text = map_check_msg,
