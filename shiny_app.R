@@ -1093,12 +1093,13 @@ server <- function(session, input, output) {
             # On charge le mot de passe de la base
             load("secret.Rdata")
             # On paramètre la connexion
-            con <- DBI::dbConnect(odbc::odbc(), 
-                                  .connection_string = paste0(
-                                      "DRIVER=Firebird/InterBase(r) driver;
-                 UID=SYSDBA; PWD=", secret, ";
-                 DBNAME=C:\\Users\\FBEDECARRA\\Documents\\Fusion\\FUSION.FDB;"),
-                                  timeout = 10)
+          con <- DBI::dbConnect(odbc::odbc(), 
+                                .connection_string = paste0(
+                                  "DRIVER=Firebird/InterBase(r) driver;
+                 UID=SYSDBA; PWD=",
+                                  secret, ";
+                 DBNAME=C:\\Users\\FBEDECARRA\\Documents\\Fusion\\2021-11-21\\FUSION.FDB;"),
+                                timeout = 10)
             dt_in <- DBI::dbReadTable(con, "VIFC_EFFECTIFS_REEL_PREV_CNS") %>%
                 dplyr::select(DATPLGPRESAT, NOMSAT, LIBPRE, LIBCON, 
                        TOTEFFREE, TOTEFFPREV) %>%
@@ -1128,8 +1129,9 @@ server <- function(session, input, output) {
         con <- DBI::dbConnect(odbc::odbc(), 
                               .connection_string = paste0(
                                 "DRIVER=Firebird/InterBase(r) driver;
-                 UID=SYSDBA; PWD=", secret, ";
-                 DBNAME=C:\\Users\\FBEDECARRA\\Documents\\Fusion\\FUSION.FDB;"),
+                 UID=SYSDBA; PWD=",
+                                secret, ";
+                 DBNAME=C:\\Users\\FBEDECARRA\\Documents\\Fusion\\2021-11-21\\FUSION.FDB;"),
                               timeout = 10)
         new_menus <- DBI::dbReadTable(con, "VIFC_MENU") %>%
           dplyr::filter(LIBPRE == "DEJEUNER" & LIBCATFIT != "PAIN") %>%
