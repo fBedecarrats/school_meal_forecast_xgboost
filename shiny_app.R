@@ -160,18 +160,24 @@ run_verteego <- function(begin_date = '2017-09-30',
 
 # A function to load the outputs of the model forecasts
 load_results <- function(folder = "output", pattern = "results_by_cafeteria.*csv") {
-  dir(folder, pattern = pattern, full.names = TRUE) %>%
-    dplyr::tibble(filename = .) %>%
-    dplyr::mutate(created = stringr::str_extract(filename, 
-                                                 "[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}"),
-                  variable = stringr::str_extract(filename, 
-                                                  "(?<=cafeteria_)[a-z]*"),
-                  training_type = stringr::str_extract(filename, 
-                                                       "xgb_interval|xgb"),
-                  file_contents = purrr::map(filename, ~ arrow::read_csv_arrow(.))) %>%
-    tidyr::unnest(cols = c(file_contents)) %>%
-    dplyr::arrange(desc(created), desc(training_type)) %>%
-    dplyr::distinct(date_str, variable, cantine_nom, cantine_type, .keep_all = TRUE)
+  prev_results <- dir(folder, pattern = pattern, full.names = TRUE) %>%
+    dplyr::tibble(filename = .)
+  if (nrow(prev_results) > 0 ) {
+    prev_results <- prev_results %>%
+      dplyr::mutate(created = stringr::str_extract(filename, 
+                                                   "[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}"),
+                    variable = stringr::str_extract(filename, 
+                                                    "(?<=cafeteria_)[a-z]*"),
+                    training_type = stringr::str_extract(filename, 
+                                                         "xgb_interval|xgb"),
+                    file_contents = purrr::map(filename, ~ arrow::read_csv_arrow(.))) %>%
+      tidyr::unnest(cols = c(file_contents)) %>%
+      dplyr::arrange(desc(created), desc(training_type)) %>%
+      dplyr::distinct(date_str, variable, cantine_nom, cantine_type, .keep_all = TRUE)
+  } else {
+    prev_results <- NA
+  }
+  return(prev_results)
 }
 # A function to retrieve results' timestamps
 check_results_fresh <- function(folder = "output", pattern = "results_by_cafeteria.*csv") {
@@ -657,16 +663,22 @@ server <- function(session, input, output) {
     # Reactive values for result display -----------------------------------
     
     
-    prev <- reactivePoll(5000, session, 
+    prev <- reactivePoll(5000, session, # Previsions
                          function() check_results_fresh(), 
-                         function() load_results()) # Previsions
-    dt <- reactivePoll(5000, session, 
+                         function() load_results()) 
+    dt <- reactivePoll(5000, session, # training data
                        function() check_traindata_fresh(), 
-                       function() load_traindata()) # training data
+                       function() load_traindata()) 
     vacs <- reactive({ return(dt()$vacs) }) # vacations
     pivs <- reactive({ gen_piv(vacs()) }) # Period between vacations
-    cafets <- reactive({ c("Tous", # List of cafeteria
-                           levels(factor(prev()$cantine_nom))) })
+    cafets <- reactive({ 
+      if (is.na(prev())) {
+        list_cafets <- levels(factor(dt()$freqs$site_nom))
+      } else {
+        list_cafets <- levels(factor(prev()$cantine_nom))
+      }
+      c("Tous", list_cafets) 
+      })
     periods <- reactive({ levels(pivs()$periode) }) # Name of the periods
     years <- reactive({ # School years
         levels(forcats::fct_rev(pivs()$annee)) 
@@ -751,7 +763,11 @@ server <- function(session, input, output) {
     })
     
     last_prev <- reactive ({
+      if (is.na(prev())) {
+        max(dt()$freqs$date)
+      } else {
         max(ymd(prev()$date_str))
+      }
     })
     
     piv_last_prev <- reactive({
@@ -816,6 +832,7 @@ server <- function(session, input, output) {
                               selected = new_period)
         }
     })
+    
     output$select_period <- renderUI({
         selectInput("select_period", "Période inter-vacances",
                     choices = periods(),
