@@ -712,19 +712,14 @@ server <- function(session, input, output) {
     filtered_dt <- reactive({
       # parameters for debugging without shiny ui-server
       # cafet <- "Tous" # for debugging only
-      # selected_dates <- c("2019-01-01", "2019-04-15") # for debugging only
+      # selected_dates <- c("2021-09-01", "2021-10-22") # for debugging only
+      # date_start <- lubridate::ymd(selected_dates[[1]]) # for debugging only
+      # date_end <- lubridate::ymd(selected_dates[[2]]) # for debugging only
       
       # Filter parameters
       date_start <- lubridate::ymd(selected_dates()[[1]])
       date_end <- lubridate::ymd(selected_dates()[[2]])
       cafet <- input$select_cafet
-      # previsions for selected dates
-      filtered_prevs <- prev() %>%
-        dplyr::mutate(Date = lubridate::as_date(date_str),
-                      Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
-                                                variable == "prevision" ~ "prevision_commandes")) %>%
-        dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end)
       
       # attendance for selected dates
       filtered_freqs <- dt()$freqs %>%
@@ -735,10 +730,24 @@ server <- function(session, input, output) {
         dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
                                                 Source == "prevision" ~ "reel_commandes"))
       
-      # bind frequentation and previsions
-      join_filtered <- filtered_freqs %>%
-        dplyr::bind_rows(filtered_prevs)
       
+      # Conditional to enable displaying only traininf data if no previsions
+      if (is.na(prev())) {
+        join_filtered <- filtered_freqs
+      } else {
+        # previsions for selected dates
+        filtered_prevs <- prev() %>%
+          dplyr::mutate(Date = lubridate::as_date(date_str),
+                        Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
+                                                  variable == "prevision" ~ "prevision_commandes")) %>%
+          dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
+          dplyr::filter(Date >= date_start & Date <= date_end)
+        
+        # bind frequentation and previsions
+        join_filtered <- filtered_freqs %>%
+          dplyr::bind_rows(filtered_prevs)
+      }
+    
       # Filtering on cafeteria
       if (cafet != "Tous") {
         join_filtered <- join_filtered %>%
@@ -756,6 +765,7 @@ server <- function(session, input, output) {
     
     out_filtered_dt <- reactive({
       filtered_dt() %>%
+      # filtered <- filtered %>%
         dplyr::mutate(Jour = lubridate::wday(Date, label = TRUE, abbr = FALSE),
                       Date = format(Date, "%d/%m/%Y")) %>%
         dplyr::select(Date, Jour, everything()) %>%
@@ -871,6 +881,14 @@ server <- function(session, input, output) {
     output$plot <- plotly::renderPlotly({
       dt2 <- filtered_dt()
       
+      # We give empty values if there is no previsions
+      if (is.na(prev())) {
+        dt2 <- dplyr::bind_rows(dt2, 
+                                dplyr::mutate(dt2,
+                                              Source = stringr::str_replace(Source, "reel_", "prevision_"),
+                                              Repas = NA))
+      }
+      
       static <- dt2 %>%
         ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, color = Source)) +
         ggplot2::geom_bar(data = subset(dt2, stringr::str_starts(Source, "prevision_")),
@@ -886,7 +904,7 @@ server <- function(session, input, output) {
         ggplot2::scale_fill_manual(values = c("red", "green", "red", "green")) + 
         ggplot2::scale_color_manual(values = c("red", "green3", "red3", "green4")) +
         ggplot2::scale_x_date(date_breaks = "1 day", date_labels = "%a %d %b")
-      
+
       plotly::ggplotly(static, tooltip = c("x", "y", "fill")) %>%
         plotly::config(displayModeBar = FALSE) %>%
         plotly::layout(legend = list(orientation = "h", x = 0, y = 1.1))
