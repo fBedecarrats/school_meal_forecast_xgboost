@@ -1052,7 +1052,7 @@ server <- function(session, input, output) {
             dplyr::bind_rows(freqs) %>%
             readr::write_csv(index$path[index$name == "freqs"])
         
-        update_mapping_cafet_freq(to_add)
+        # update_mapping_cafet_freq(to_add)
         sync_ssp_cloud("input")
         shinyalert(title = "Import réussi !",
                    text = paste("Ajout de",
@@ -1104,7 +1104,7 @@ server <- function(session, input, output) {
                        TOTEFFREE, TOTEFFPREV) %>%
                 transform_fusion(check_against = dt()$map_freqs$cantine_nom) %>%
                 load_fusion(freqs = dt()$freqs)
-            update_mapping_cafet_freq(dt_in)
+            # update_mapping_cafet_freq(dt_in)
             sync_ssp_cloud("input")
         }
         
