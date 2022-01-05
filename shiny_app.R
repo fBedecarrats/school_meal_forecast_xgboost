@@ -573,10 +573,10 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                                                c("Fréquentation réelle" = "reel", 
                                                  "Commandes par les écoles" = "prevision")),
                                    dateRangeInput("daterange_forecast", "Période à prévoir :",
-                                                  start  = "2017-09-30",
-                                                  end    = "2017-12-15",
-                                                  min    = "2012-01-01",
-                                                  max    = "2021-12-31",
+                                                  start  = "2019-09-01",
+                                                  end    = "2019-12-31",
+                                                  min    = "2015-01-01",
+                                                  max    = "2025-12-31",
                                                   format = "dd/mm/yyyy",
                                                   separator = " - ",
                                                   language = "fr",
@@ -662,7 +662,7 @@ server <- function(session, input, output) {
   
     # Reactive values for result display -----------------------------------
     
-    
+    # prev <- reactive({ load_results() }) 
     prev <- reactivePoll(5000, session, # Previsions
                          function() check_results_fresh(), 
                          function() load_results()) 
@@ -672,7 +672,7 @@ server <- function(session, input, output) {
     vacs <- reactive({ return(dt()$vacs) }) # vacations
     pivs <- reactive({ gen_piv(vacs()) }) # Period between vacations
     cafets <- reactive({ 
-      if (is.na(prev())) {
+      if (any(any(is.na(prev())) | nrow(filtered_prev) == 0)) {
         list_cafets <- levels(factor(dt()$freqs$site_nom))
       } else {
         list_cafets <- levels(factor(prev()$cantine_nom))
@@ -712,7 +712,7 @@ server <- function(session, input, output) {
     filtered_dt <- reactive({
       # parameters for debugging without shiny ui-server
       # cafet <- "Tous" # for debugging only
-      # selected_dates <- c("2021-09-01", "2021-10-22") # for debugging only
+      # selected_dates <- c("2020-03-01", "2020-04-11") # for debugging only
       # date_start <- lubridate::ymd(selected_dates[[1]]) # for debugging only
       # date_end <- lubridate::ymd(selected_dates[[2]]) # for debugging only
       
@@ -732,10 +732,10 @@ server <- function(session, input, output) {
       
       
       # Conditional to enable displaying only traininf data if no previsions
-      if (is.na(prev())) {
+      if (any(any(is.na(prev())) | nrow(filtered_prev()) == 0)) {
         join_filtered <- filtered_freqs
       } else {
-        # previsions for selected dates
+      # previsions for selected dates
         filtered_prevs <- prev() %>%
           dplyr::mutate(Date = lubridate::as_date(date_str),
                         Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
@@ -773,7 +773,7 @@ server <- function(session, input, output) {
     })
     
     last_prev <- reactive ({
-      if (is.na(prev())) {
+      if (any(is.na(prev()))) {
         max(dt()$freqs$date)
       } else {
         max(ymd(prev()$date_str))
@@ -782,7 +782,7 @@ server <- function(session, input, output) {
     
     piv_last_prev <- reactive({
         pivs() %>%
-            dplyr::filter(last_prev() %within% lubridate::interval(`Début`, Fin))
+            dplyr::filter(last_prev() %within% lubridate::interval(`Début`, dplyr::lead(`Début`)))
     })
     
     # Navigation - bouton "Après" ---------------------------------------------
@@ -882,8 +882,8 @@ server <- function(session, input, output) {
       dt2 <- filtered_dt()
       
       # We give empty values if there is no previsions
-      if (is.na(prev())) {
-        dt2 <- dplyr::bind_rows(dt2, 
+      if (any(any(is.na(prev())) | nrow(filtered_prev()) == 0)) {
+        dt2 <- dplyr::bind_rows(dt2,
                                 dplyr::mutate(dt2,
                                               Source = stringr::str_replace(Source, "reel_", "prevision_"),
                                               Repas = NA))
@@ -1036,8 +1036,8 @@ server <- function(session, input, output) {
     observeEvent(input$add_effs_real_od, {
         httr::GET(freq_od, # httr_progress(waitress_od),
                   httr::write_disk(freq_od_temp_loc, overwrite = TRUE))
-      freqs <- dt()$freqs %>%
-        dplyr::mutate(site_id = as.character(site_id))
+      freqs <- dt()$freqs # %>%
+        # dplyr::mutate(site_id = as.character(site_id))
         to_add <- arrow::read_delim_arrow(freq_od_temp_loc, delim = ";",
                                           col_select = c(
                                               site_id, site_type, date, 
