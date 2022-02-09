@@ -1264,8 +1264,8 @@ server <- function(session, input, output) {
         dplyr::mutate(date_debut = date_debut + 1, date_fin = date_fin - 1) %>%
         dplyr::anti_join(dt()$schoolyears, by = "annee_scolaire") %>%
         dplyr::arrange(dplyr::desc(date_debut)) %>%
-        bind_rows(dt()$schoolyears) %>%
-        readr::write_csv(index$path[index$name == "freqs"])
+        dplyr::bind_rows(dt()$schoolyears) %>%
+        readr::write_csv(index$path[index$name == "schoolyears"])
       
       sync_ssp_cloud("input")
       shinyalert::shinyalert(title = "Import des vacances depuis l'open data de l'éducation nationale réussi !",
