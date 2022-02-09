@@ -1,9 +1,14 @@
-# shiny::reactiveConsole(enabled = TRUE)
+# util functions -------------------------------------------------------------
+# the business functions are in another section below
 
-# Needs shiny version >= 1.7.1 to run
-if (compareVersion(installed.packages()["shiny",3], "1.7.1") < 0) {
-  update.packages("shiny")
+create_folder <- function(folder) {
+  # Creating a temp folder if needed to handle downloads
+  if (!(dir.exists(folder))) {
+    dir.create(folder)
+  }
 }
+
+
 # Set parameters -------------------------------------------------------------
 
 
@@ -94,12 +99,9 @@ od_url <- function(portal, dataset_id,
 }
 
 # Creating a temp folder if needed to handle downloads
-if (!(dir.exists("temp"))) {
-  dir.create("temp")
-}
-if (!(dir.exists(data_path))) {
-  dir.create(data_path)
-}
+
+create_folder("temp")
+create_folder(data_path)
 
 freq_id = "244400404_nombre-convives-jour-cantine-nantes-2011"
 freq_od <- od_url(portal = portal, dataset_id = freq_id)
@@ -635,8 +637,8 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
 
 # Define server logic required to draw a histogram
 server <- function(session, input, output) {
-  
-
+  # To enable upload of large files (Parquet files from Fusion)
+  options(shiny.maxRequestSize=30*1024^2)
 # Handle simple vs. advanced interface ------------------------------------
   
   # Start with hidden tabs
@@ -1080,12 +1082,12 @@ server <- function(session, input, output) {
     ### Import attendance parquet ---------------------------------------------
     # Manually load datafile
     observeEvent(input$add_effs_real, {
-        # file_in <- input$add_effs_real
-        # dt_in <- arrow::read_parquet(file_in$datapath,
-        #                              col_select = c("DATPLGPRESAT", "NOMSAT", "LIBPRE",
-        #                                             "LIBCON","TOTEFFREE", "TOTEFFPREV")) %>%
-        #     transform_fusion(check_against = dt()$map_freqs$cantine_nom) %>%
-        #     load_fusion(freqs = dt()$freqs)
+        file_in <- input$add_effs_real
+        dt_in <- arrow::read_parquet(file_in$datapath,
+                                     col_select = c("DATPLGPRESAT", "NOMSAT", "LIBPRE",
+                                                    "LIBCON","TOTEFFREE", "TOTEFFPREV")) %>%
+            transform_fusion(check_against = dt()$map_freqs$cantine_nom) %>%
+            load_fusion(freqs = dt()$freqs)
       shinyalert(title = "Cette fonction est temporairement désactivée",
                  text = paste("Un correctif doit être apporté pour que cette",
                               "fonctionnalité soit rétablie."),
@@ -1167,6 +1169,31 @@ server <- function(session, input, output) {
                                 "jours de service."),
                    type = "success")
       }
+      
+    })
+    
+    ### Import menus parquet ---------------------------------------
+    observeEvent(input$add_menus, {
+      file_in <- input$add_menus
+      new_menus  <- arrow::read_parquet(file_in$datapath) %>%
+      # new_menus <- arrow::read_parquet("menus.parquet") %>%
+          dplyr::filter(LIBPRE == "DEJEUNER" & LIBCATFIT != "PAIN") %>%
+          dplyr::select(date = "DATPLGPRE", rang = "ORDRE_LIBCATFIT", 
+                        plat = "LIBCLIFIT") %>%
+          unique() %>%
+          arrange(desc(date), rang) %>% # nicer to inspect the table this way
+          dplyr::mutate(date = format(date, "%d/%m/%Y")) %>%
+          dplyr::filter(!(date %in% dt()$menus$date))
+        dplyr::bind_rows(dt()$menus, new_menus) %>%
+          readr::write_csv(index$path[index$name == "menus"])
+        sync_ssp_cloud("input")
+        shinyalert(title = "Import réussi des menus depuis le fichier !",
+                   text = paste("Ajout des menus de convive pour",
+                                nrow(new_menus), 
+                                "plats pour",
+                                length(unique(new_menus$date)), 
+                                "jours de service."),
+                   type = "success")
       
     })
     
