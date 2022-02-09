@@ -65,7 +65,7 @@ library(waiter)
 
 
 # Parameters --------------------------------------------------------------
-data_path <- "tests/data"
+data_path <- "data"
 index <- dplyr::tribble(
     ~name,          ~path,
     "schoolyears",  "calculators/annees_scolaires.csv",
@@ -174,7 +174,7 @@ load_results <- function(folder = "output", pattern = "results_by_cafeteria.*csv
                                                          "xgb_interval|xgb"),
                     file_contents = purrr::map(filename, ~ arrow::read_csv_arrow(.))) %>%
       tidyr::unnest(cols = c(file_contents)) %>%
-      dplyr::arrange(desc(created), desc(training_type)) %>%
+      dplyr::arrange(dplyr::desc(created), dplyr::desc(training_type)) %>%
       dplyr::distinct(date_str, variable, cantine_nom, cantine_type, .keep_all = TRUE)
   } else {
     prev_results <- NA
@@ -1012,7 +1012,7 @@ server <- function(session, input, output) {
                                "Ces données peuvent être importées de plusieurs manières :
                                - en allant récupérer les inormations les plus récentes sur l'open data
                                - en changeant les données brutes extraites d'un sauvegarde de la base de données de Fusion
-                               - en se connectation directement à l'outil Fusion", 
+                               - en se connectation directement à l'outil Fusion (uniquement lorsque l'application fonctionne en local sur un PC configuré pour avoir accès à Fusion)", 
                                type = "info")
     }) 
     observeEvent(input$help_menus, {
@@ -1020,7 +1020,7 @@ server <- function(session, input, output) {
                                "Ces données peuvent être importées de plusieurs manières :
                                - en allant récupérer les inormations les plus récentes sur l'open data
                                - en changeant les données brutes extraites d'un sauvegarde de la base de données de Fusion
-                               - en se connectation directement à l'outil Fusion", 
+                               - en se connectation directement à l'outil Fusion (uniquement lorsque l'application fonctionne en local sur un PC configuré pour avoir accès à Fusion)", 
                                type = "info")
     })
     observeEvent(input$help_strikes, {
@@ -1181,7 +1181,7 @@ server <- function(session, input, output) {
           dplyr::select(date = "DATPLGPRE", rang = "ORDRE_LIBCATFIT", 
                         plat = "LIBCLIFIT") %>%
           unique() %>%
-          arrange(desc(date), rang) %>% # nicer to inspect the table this way
+          dplyr::arrange(dplyr::desc(date), rang) %>% # nicer to inspect the table this way
           dplyr::mutate(date = format(date, "%d/%m/%Y")) %>%
           dplyr::filter(!(date %in% dt()$menus$date))
         dplyr::bind_rows(dt()$menus, new_menus) %>%
@@ -1252,8 +1252,23 @@ server <- function(session, input, output) {
       new_vacs %>%
         dplyr::bind_rows(old_vacs) %>%
         readr::write_csv(index$path[index$name == "vacs"])
+      # Updating annees_scolaires.csv
+      gen_piv(dt()$vacs) %>%
+        dplyr::filter(stringr::str_detect(periode, "Ete")) %>%
+        tidyr::pivot_longer(cols = c(-annee, -periode), names_to = "borne", values_to = "date") %>%
+        dplyr::filter((periode == "Ete-Toussaint" & borne == "Début") | 
+                 (periode == "Printemps-Ete" & borne == "Fin")) %>%
+        dplyr::select(-periode) %>%
+        tidyr::pivot_wider(id_cols = "annee", names_from = "borne", values_from = "date") %>%
+        dplyr::select(annee_scolaire = annee, date_debut = `Début`, date_fin = Fin) %>%
+        dplyr::mutate(date_debut = date_debut + 1, date_fin = date_fin - 1) %>%
+        dplyr::anti_join(dt()$schoolyears, by = "annee_scolaire") %>%
+        dplyr::arrange(dplyr::desc(date_debut)) %>%
+        bind_rows(dt()$schoolyears) %>%
+        readr::write_csv(index$path[index$name == "freqs"])
+      
       sync_ssp_cloud("input")
-      shinyalert(title = "Import des vacances depuis l'open data de l'éducation nationale réussi !",
+      shinyalert::shinyalert(title = "Import des vacances depuis l'open data de l'éducation nationale réussi !",
                  text = paste("Ajout des vacances scolaires pour la Zone B, pour",
                               nrow(new_vacs), 
                               "périodes de vacances."),
