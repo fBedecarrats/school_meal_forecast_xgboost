@@ -346,11 +346,11 @@ load_fusion <- function(x, freqs) {
     }
     freqs <- dplyr::bind_rows(freqs, new_days) %>%
         readr::write_csv(index$path[index$name == "freqs"])
-    alert_new <- paste("Ajout des fréquentation par type de convive pour",
+    alert_new <- paste("Ajout des fréquentation par type de convive pour ",
                        nrow(new_days), 
-                       "effectifs de repas par établissement pour",
+                       " effectifs de repas par établissement pour ",
                        length(unique(new_days$date)), 
-                       "jours de service.")
+                       " jours de service.")
     
     shinyalert(title = "Import depuis le fichier issu de Fusion réussi !",
                text = paste0(alert_exist, alert_new),
