@@ -16,7 +16,7 @@ pkgs_to_load <- "shiny"
 pkgs_not_load <- c("shiny","purrr", "DT", "readr", "arrow", 
                    "data.table", "stringr", "lubridate", "plotly", "forcats",
                    "shinyalert", "dplyr", "tidyr", "shinyjs", "shinyhttr",
-                   "waiter", "odbc", "DBI", "waiter", "shinyalert")
+                   "waiter", "odbc", "DBI", "waiter", "shinyalert", "writexl")
 
 # A function to install required packages
 install_load <- function(mypkg, to_load = FALSE) {
@@ -28,7 +28,7 @@ install_load <- function(mypkg, to_load = FALSE) {
   }
 }
 
-install_load("reticulate")
+# install_load("reticulate")
 
 ## Environment parameters
 # Appropriate .Rprofile needs to be included in the project folder
@@ -51,8 +51,8 @@ if (!reticulate::virtualenv_exists(envname = "venv_shiny_app")) {
 reticulate::use_virtualenv(virtualenv = virtualenv_dir, required = TRUE)
 
 # Libraries -------------------------------------------------------------------
-install_load(pkgs_to_load, to_load = TRUE)
-install_load(pkgs_not_load)
+# install_load(pkgs_to_load, to_load = TRUE)
+# install_load(pkgs_not_load)
 
 library(magrittr)
 library(lubridate)
@@ -479,7 +479,9 @@ ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                           fluidRow(plotly::plotlyOutput("plot")),
                           fluidRow(
                               column(3, downloadButton("dwn_filtered", 
-                                                       "Télécharger les données affichées")))#☺,
+                                                       "Télécharger les données affichées")),
+                              column(4, downloadButton("dwn_period_all", 
+                                                     "Télécharger toutes les données pour la période sélectionnée")))#☺,
                           # column(3, downloadButton("dwn_filtered", 
                           #                          "Télécharger toutes les données")))
                  ),
@@ -795,6 +797,69 @@ server <- function(session, input, output) {
         dplyr::select(Date, Jour, everything()) %>%
         dplyr::filter(Jour %in% c("lundi", "mardi", "jeudi", "vendredi"))
     })
+    
+    period_all <- reactive({ # Filtering all data
+      # Retreive parameters
+      
+      date_start <- lubridate::ymd(selected_dates()[[1]])
+      date_end <- lubridate::ymd(selected_dates()[[2]])
+      week_days <- c(1,2,4,5) # Monday, Tuesday, Thursday and Friday
+      
+      # Filter dates
+      filtered_prev <- prev() %>%
+        dplyr::mutate(Date = lubridate::as_date(date_str),
+                      Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
+                                                variable == "prevision" ~ "prevision_commandes")) %>%
+        dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
+        dplyr::filter(Date >= date_start & Date <= date_end)
+      
+      filtered_freqs <- dt()$freqs %>%
+        dplyr::mutate(Date = lubridate::as_date(date)) %>%
+        dplyr::filter(Date >= date_start & Date <= date_end) %>%
+        dplyr::select(Date, site_nom, reel, prevision) %>%
+        tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
+        dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
+                                                Source == "prevision" ~ "reel_commandes"))
+      
+      filtered <- dplyr::bind_rows(filtered_prev, filtered_freqs) %>%
+        dplyr::filter(format(Date, "%w") %in% week_days) %>%
+        dplyr::arrange(Date)
+      
+      # Ensure not to have a similar file with the same name
+      file.remove(output_name)
+      
+
+      my_sheets <- list()
+      # global statistics
+      global <- filtered %>% 
+        dplyr::group_by(Date, Source) %>%
+        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE)) %>%
+        mutate(Date = format(Date, "%a %d/%m/%Y")) %>%
+        tidyr::pivot_wider(names_from = Source, values_from = Repas)
+
+      my_sheets[[1]] <- global
+        
+      # statistics by source
+      sources <- unique(filtered$Source) 
+      for (i in 1:length(sources)) {
+        to_add <- filtered %>%
+          dplyr::filter(Source == sources[i]) %>%
+          mutate(Date = format(Date, "%a %d/%m/%Y")) %>%
+          tidyr::pivot_wider(names_from = Date, values_from = Repas) %>%
+          dplyr::select(-Source)
+        my_sheets[[length(my_sheets)+1]] <-to_add
+      }
+      names(my_sheets) <- c("global", sources)
+      return(my_sheets)
+    })
+    
+    output$dwn_period_all <- downloadHandler(
+      filename = function() { paste0("Toutes_donnees_", 
+                                     lubridate::ymd(selected_dates()[[1]]), "_", 
+                                     lubridate::ymd(selected_dates()[[2]]), 
+                                     ".xlsx") },
+      content = function(file) { writexl::write_xlsx(period_all(), path = file) }
+    )
     
     last_prev <- reactive ({
       if (any(is.na(prev()))) {
