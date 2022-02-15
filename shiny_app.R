@@ -482,36 +482,13 @@ prep_prevs <- function (x = prev()) {
 # A function to merge the results
 merge_freqs_prevs <- function(freqs, prevs) {
   
-  no_prev <- any(is.na(prevs) | nrow(prevs) == 0)
-  no_freqs <- any(is.na(freqs) | nrow(freqs) == 0)
-  
-  # Create an empty tibble
-  join_filtered <- dplyr::tibble(
-    Date = lubridate::ymd(),
-    site_nom = character(),
-    Source = character(),
-    Repas = integer())
-  
-  # Conditional to enable displaying only training data if no previsions
-  if (!no_prev & no_freqs) {
-    join_filtered <- prevs %>%
-      dplyr::bind_rows(dplyr::mutate(prevs,
-                                     Source = stringr::str_replace(Source, "prevision_", "reel_"),
-                                     Repas = NA))
-  } else if (no_prev & !no_freqs) {
-    join_filtered <- freqs %>%
-      dplyr::bind_rows(dplyr::mutate(freqs,
-                                     Source = stringr::str_replace(Source, "reel_", "prevision_"),
-                                     Repas = NA))
-  } else if (!no_prev & !no_freqs) {
     join_filtered <- freqs %>%
       dplyr::bind_rows(prevs)
-  }
-  return(join_filtered)
 }
 
 
 filter_merged <- function (x, date_start, date_end, cafet) {
+  
   
   # Filter dates
   filtered <- x %>%
@@ -527,6 +504,22 @@ filter_merged <- function (x, date_start, date_end, cafet) {
   filtered <- filtered %>%
     dplyr::group_by(Date, Source) %>%
     dplyr::summarise(Repas = sum(Repas, na.rm = TRUE))
+  
+  no_prevs <- nrow(dplyr::filter(filtered, stringr::str_starts(Source, "prevision_"))) == 0
+  no_freqs<- nrow(dplyr::filter(filtered, stringr::str_starts(Source, "reel_"))) == 0
+ 
+  # Conditional to enable displaying only training data if no previsions
+  if (!no_prev & no_freqs) {
+    filtered <- filtered %>%
+      dplyr::bind_rows(dplyr::mutate(filtered,
+                                     Source = stringr::str_replace(Source, "prevision_", "reel_"),
+                                     Repas = NA))
+  } else if (no_prev & !no_freqs) {
+    filtered <- filtered %>%
+      dplyr::bind_rows(dplyr::mutate(filtered,
+                                     Source = stringr::str_replace(Source, "reel_", "prevision_"),
+                                     Repas = NA))
+  }
   
   return(filtered)
   
