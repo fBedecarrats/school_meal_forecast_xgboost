@@ -455,6 +455,61 @@ not_in <- function(x, y, index = index) {
   }
 }
 
+# A function to filter and structure attendance data based on start/end dates
+# and a cafeteria selection
+filter_freqs <- function (x, date_start, date_end, cafet) {
+  
+  # Gilter by fate and recode
+  filtered <- x %>%
+    dplyr::mutate(Date = lubridate::as_date(date)) %>%
+    dplyr::filter(Date >= date_start & Date <= date_end) %>%
+    dplyr::select(Date, site_nom, reel, prevision) %>%
+    tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
+    dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
+                                            Source == "prevision" ~ "reel_commandes"))
+  # Filtering on cafeteria
+  if (cafet != "Tous") {
+    filtered <- filtered %>%
+      dplyr::filter(site_nom == cafet)
+  }
+  
+  # Summarise for global or per cafeteria
+  filtered <- filtered  %>%
+    dplyr::group_by(Date, Source) %>%
+    dplyr::summarise(Repas = sum(Repas, na.rm = TRUE)) %>%
+    dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) 
+  
+  return(filtered)
+  
+}
+
+# A function to filter and structure pevision data based on start/end dates
+# and a cafeteria selection
+filter_prevs <- function (x, date_start, date_end, cafet) {
+  
+  # Filter dates
+  filtered <- x %>%
+    dplyr::mutate(Date = lubridate::as_date(date_str),
+                  Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
+                                            variable == "prevision" ~ "prevision_commandes")) %>%
+    dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
+    dplyr::filter(Date >= date_start & Date <= date_end)
+  
+  # Filter cafet
+  if (cafet != "Tous") {
+    filtered <- filtered %>%
+      dplyr::filter(site_nom == cafet)
+  }
+  
+  # Summarise
+  filtered <- filtered %>%
+    dplyr::group_by(Date, Source) %>%
+    dplyr::summarise(Repas = sum(Repas, na.rm = TRUE))
+  
+  return(filtered)
+  
+}
+
 # UI ----------------------------------------------------------------------
 ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                  theme = bslib::bs_theme(bootswatch = "simplex", version = 5),
@@ -697,65 +752,24 @@ server <- function(session, input, output) {
     })
     
     filtered_prev <- reactive({ # Filtering the prevision based on parameters
-      # Retreive parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
-      # Filter dates
-      filtered <- prev() %>%
-        dplyr::mutate(Date = lubridate::as_date(date_str),
-                      Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
-                                                variable == "prevision" ~ "prevision_commandes")) %>%
-        dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end)
-      # Filter cafet
-      if (cafet != "Tous") {
-        filtered <- filtered %>%
-          dplyr::filter(site_nom == cafet)
-      }
-      # Summarise
-      filtered <- filtered %>%
-        dplyr::group_by(Date, Source) %>%
-        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE))
       
-      return(filtered)
-    })
-    
-    filtered_freqs <- reactive({ 
-      # Tertreive_parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
-      # Gilter by fate and recode
-      filtered <- dt()$freqs %>%
-        dplyr::mutate(Date = lubridate::as_date(date)) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end) %>%
-        dplyr::select(Date, site_nom, reel, prevision) %>%
-        tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
-        dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
-                                                Source == "prevision" ~ "reel_commandes"))
-      # Filtering on cafeteria
-      if (cafet != "Tous") {
-        filtered <- filtered %>%
-          dplyr::filter(site_nom == cafet)
-      }
-      
-      # Summarise for global or per cafeteria
-      filtered <- filtered  %>%
-        dplyr::group_by(Date, Source) %>%
-        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE)) %>%
-        dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) 
-      
-      return(filtered)
+      filter_prevs(x = prev(), 
+                   date_start = lubridate::ymd(selected_dates()[[1]]),
+                   date_end = lubridate::ymd(selected_dates()[[2]]),
+                   cafet = input$select_cafet)
       
       })
     
+    filtered_freqs <- reactive({ # Filtering the prevision based on parameters
+      
+      filter_freqs(x = dt()$freqs, 
+                   date_start = lubridate::ymd(selected_dates()[[1]]),
+                   date_end = lubridate::ymd(selected_dates()[[2]]),
+                   cafet = input$select_cafet)
+      
+    })
+    
     filtered_dt <- reactive({
-
-      # Filter parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
       
       no_prev <- any(any(is.na(prev())) | nrow(filtered_prev()) == 0)
       no_freqs <- any(nrow(filtered_freqs()) == 0 | nrow(filtered_freqs()) == 0)
@@ -767,7 +781,7 @@ server <- function(session, input, output) {
         Source = character(),
         Repas = integer())
       
-      # Conditional to enable displaying only traininf data if no previsions
+      # Conditional to enable displaying only training data if no previsions
       if (!no_prev & no_freqs) {
         prevs <- filtered_prev() 
         join_filtered <- prevs %>%
