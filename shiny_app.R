@@ -455,6 +455,85 @@ not_in <- function(x, y, index = index) {
   }
 }
 
+
+# Test_pipeline -----------------------------------------------------------
+
+# A function structure attendance data in a harmonized way with prevision data
+prep_freqs <- function (x = dt()$freqs) {
+
+  x %>%
+    dplyr::mutate(Date = lubridate::as_date(date)) %>%
+    dplyr::select(Date, site_nom, reel, prevision) %>%
+    tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
+    dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
+                                            Source == "prevision" ~ "reel_commandes"))
+}
+
+# A function structure prevision data in a harmonized way with attendance data
+prep_prevs <- function (x = prev()) {
+  
+  x %>%
+    dplyr::mutate(Date = lubridate::as_date(date_str),
+                  Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
+                                            variable == "prevision" ~ "prevision_commandes")) %>%
+    dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output)
+}
+
+# A function to merge the results
+merge_freqs_prevs <- function(freqs, prevs) {
+  
+  no_prev <- any(is.na(prevs) | nrow(prevs) == 0)
+  no_freqs <- any(is.na(freqs) | nrow(freqs) == 0)
+  
+  # Create an empty tibble
+  join_filtered <- dplyr::tibble(
+    Date = lubridate::ymd(),
+    site_nom = character(),
+    Source = character(),
+    Repas = integer())
+  
+  # Conditional to enable displaying only training data if no previsions
+  if (!no_prev & no_freqs) {
+    join_filtered <- prevs %>%
+      dplyr::bind_rows(dplyr::mutate(prevs,
+                                     Source = stringr::str_replace(Source, "prevision_", "reel_"),
+                                     Repas = NA))
+  } else if (no_prev & !no_freqs) {
+    join_filtered <- freqs %>%
+      dplyr::bind_rows(dplyr::mutate(freqs,
+                                     Source = stringr::str_replace(Source, "reel_", "prevision_"),
+                                     Repas = NA))
+  } else if (!no_prev & !no_freqs) {
+    join_filtered <- freqs %>%
+      dplyr::bind_rows(prevs)
+  }
+  return(join_filtered)
+}
+
+
+filter_merged <- function (x, date_start, date_end, cafet) {
+  
+  # Filter dates
+  filtered <- x %>%
+    dplyr::filter(Date >= date_start & Date <= date_end)
+  
+  # Filter cafet
+  if (cafet != "Tous") {
+    filtered <- filtered %>%
+      dplyr::filter(site_nom == cafet)
+  }
+  
+  # Summarise
+  filtered <- filtered %>%
+    dplyr::group_by(Date, Source) %>%
+    dplyr::summarise(Repas = sum(Repas, na.rm = TRUE))
+  
+  return(filtered)
+  
+}
+
+
+
 # UI ----------------------------------------------------------------------
 ui <- navbarPage("Prévoir commandes et fréquentation", id = "tabs",
                  theme = bslib::bs_theme(bootswatch = "simplex", version = 5),
@@ -678,11 +757,11 @@ server <- function(session, input, output) {
     vacs <- reactive({ return(dt()$vacs) }) # vacations
     pivs <- reactive({ gen_piv(vacs()) }) # Period between vacations
     cafets <- reactive({ 
-      if (any(any(is.na(prev())) | nrow(filtered_prev) == 0)) {
+      if ( any(is.na(prev())) ) {
         list_cafets <- levels(factor(dt()$freqs$site_nom))
       } else {
         list_cafets <- levels(factor(prev()$cantine_nom))
-      }
+      } 
       c("Tous", list_cafets) 
       })
     periods <- reactive({ levels(pivs()$periode) }) # Name of the periods
@@ -698,99 +777,8 @@ server <- function(session, input, output) {
             dplyr::select(`Début`, `Fin`)
     })
     
-    filtered_prev <- reactive({ # Filtering the prevision based on parameters
-      # Retreive parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
-      # Filter dates
-      filtered <- prev() %>%
-        dplyr::mutate(Date = lubridate::as_date(date_str),
-                      Source = dplyr::case_when(variable == "reel" ~ "prevision_frequentation",
-                                                variable == "prevision" ~ "prevision_commandes")) %>%
-        dplyr::select(Date, site_nom = cantine_nom, Source, Repas = output) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end)
-      # Filter cafet
-      if (cafet != "Tous") {
-        filtered <- filtered %>%
-          dplyr::filter(site_nom == cafet)
-      }
-      # Summarise
-      filtered <- filtered %>%
-        dplyr::group_by(Date, Source) %>%
-        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE))
-      
-      return(filtered)
-    })
-    
-    filtered_freqs <- reactive({ 
-      # Tertreive_parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
-      # Gilter by fate and recode
-      filtered <- dt()$freqs %>%
-        dplyr::mutate(Date = lubridate::as_date(date)) %>%
-        dplyr::filter(Date >= date_start & Date <= date_end) %>%
-        dplyr::select(Date, site_nom, reel, prevision) %>%
-        tidyr::pivot_longer(reel:prevision, names_to = "Source", values_to = "Repas") %>%
-        dplyr::mutate(Source = dplyr::case_when(Source == "reel" ~ "reel_frequentation",
-                                                Source == "prevision" ~ "reel_commandes"))
-      # Filtering on cafeteria
-      if (cafet != "Tous") {
-        filtered <- filtered %>%
-          dplyr::filter(site_nom == cafet)
-      }
-      
-      # Summarise for global or per cafeteria
-      filtered <- filtered  %>%
-        dplyr::group_by(Date, Source) %>%
-        dplyr::summarise(Repas = sum(Repas, na.rm = TRUE)) %>%
-        dplyr::filter(if_any(where(is.numeric), ~ .x > 0)) 
-      
-      return(filtered)
-      
-      })
-    
-    filtered_dt <- reactive({
-
-      # Filter parameters
-      date_start <- lubridate::ymd(selected_dates()[[1]])
-      date_end <- lubridate::ymd(selected_dates()[[2]])
-      cafet <- input$select_cafet
-      
-      no_prev <- any(any(is.na(prev())) | nrow(filtered_prev()) == 0)
-      no_freqs <- any(nrow(filtered_freqs()) == 0 | nrow(filtered_freqs()) == 0)
-      
-      # Create an empty tibble
-      join_filtered <- dplyr::tibble(
-        Date = lubridate::ymd(),
-        site_nom = character(),
-        Source = character(),
-        Repas = integer())
-      
-      # Conditional to enable displaying only traininf data if no previsions
-      if (!no_prev & no_freqs) {
-        prevs <- filtered_prev() 
-        join_filtered <- prevs %>%
-          dplyr::bind_rows(dplyr::mutate(prevs,
-                                         Source = stringr::str_replace(Source, "prevision_", "reel_"),
-                                         Repas = NA))
-      } else if (no_prev & !no_freqs) {
-        freqs <- filtered_freqs()
-        join_filtered <- freqs %>%
-          dplyr::bind_rows(dplyr::mutate(freqs,
-                                         Source = stringr::str_replace(Source, "reel_", "prevision_"),
-                                         Repas = NA))
-      } else if (!no_prev & !no_freqs) {
-        join_filtered <- filtered_freqs() %>%
-          dplyr::bind_rows(filtered_prev())
-      }
-      return(join_filtered)
-    })
-    
-    out_filtered_dt <- reactive({
-      filtered_dt() %>%
+    out_filtered_view <- reactive({
+      filtered_view() %>%
       # filtered <- filtered %>%
         dplyr::mutate(Jour = lubridate::wday(Date, label = TRUE, abbr = FALSE),
                       Date = format(Date, "%d/%m/%Y")) %>%
@@ -874,6 +862,21 @@ server <- function(session, input, output) {
             dplyr::filter(last_prev() %within% lubridate::interval(`Début`, dplyr::lead(`Début`)))
     })
     
+    merged_dt <- reactive({
+      merge_freqs_prevs(
+        freqs  = prep_freqs(dt()$freqs),
+        prevs = prep_prevs(prev())
+      )
+    })
+    
+    filtered_view <- reactive({
+      filter_merged(x = merged_dt(), 
+                    date_start = lubridate::ymd(selected_dates()[[1]]),
+                    date_end = lubridate::ymd(selected_dates()[[2]]),
+                    cafet = input$select_cafet)
+      
+    })
+    
     # Navigation - bouton "Après" ---------------------------------------------
     
     observeEvent(input$apres, {
@@ -948,10 +951,6 @@ server <- function(session, input, output) {
                     choices = cafets())
     })
     
-    output$filters <- DT::renderDataTable({
-        DT::datatable(filtered_prev())
-    })
-    
     output$dwn_filtered <- downloadHandler(
       filename = function() {
         paste("previsions_", 
@@ -960,7 +959,7 @@ server <- function(session, input, output) {
               input$select_cafet, ".ods", sep="")
       },
       content = function(file) {
-        readODS::write_ods(out_filtered_dt(), file)
+        readODS::write_ods(out_filtered_view(), file)
       }
     )
     
@@ -968,7 +967,7 @@ server <- function(session, input, output) {
     
     
     output$plot <- plotly::renderPlotly({
-      dt2 <- filtered_dt()
+      dt2 <- filtered_view()
 
       static <- dt2 %>%
         ggplot2::ggplot(ggplot2::aes(x = Date, y = Repas, fill = Source, 
