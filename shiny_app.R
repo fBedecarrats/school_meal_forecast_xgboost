@@ -509,12 +509,12 @@ filter_merged <- function (x, date_start, date_end, cafet) {
   no_freqs<- nrow(dplyr::filter(filtered, stringr::str_starts(Source, "reel_"))) == 0
  
   # Conditional to enable displaying only training data if no previsions
-  if (!no_prev & no_freqs) {
+  if (!no_prevs & no_freqs) {
     filtered <- filtered %>%
       dplyr::bind_rows(dplyr::mutate(filtered,
                                      Source = stringr::str_replace(Source, "prevision_", "reel_"),
                                      Repas = NA))
-  } else if (no_prev & !no_freqs) {
+  } else if (no_prevs & !no_freqs) {
     filtered <- filtered %>%
       dplyr::bind_rows(dplyr::mutate(filtered,
                                      Source = stringr::str_replace(Source, "reel_", "prevision_"),
@@ -525,6 +525,58 @@ filter_merged <- function (x, date_start, date_end, cafet) {
   
 }
 
+# Function to compute errors 
+# TO ADD TO meal4cast
+
+compute_errors <- function(dt, strikes) {
+  dt  %>%
+    dplyr::filter(!(Date %in% strikes)) %>%
+    dplyr::distinct(Date, site_nom, Source, .keep_all = TRUE) %>%
+    tidyr::pivot_wider(names_from = Source, values_from = Repas) %>%
+    dplyr::mutate(erreur_frequentation_agents = reel_commandes - reel_frequentation,
+                  erreur_frequentation_modele = prevision_frequentation - reel_frequentation,
+                  erreur_commandes_modele = prevision_commandes - reel_commandes)
+}
+
+
+
+filter_errors <- function(errors, date_start = NULL, date_end = NULL, global = FALSE) {
+  if (!is.null(date_start) & !is.null(date_end)) {
+    errors <- errors %>%
+      filter(Date >= date_start & Date <= date_end)
+  }
+  if (global) {
+    errors <- errors %>%
+      dplyr::group_by(Date) %>%
+      dplyr::summarise(erreur_frequentation_agents = sum(erreur_frequentation_agents, na.rm = TRUE),
+                       erreur_frequentation_modele = sum(erreur_frequentation_modele, na.rm = TRUE),
+                       erreur_commandes_modele = sum(erreur_commandes_modele, na.rm = TRUE))
+  }
+  return(errors)
+}
+
+keep_dates_with_both_prevs_and_freqs <- function(errors) {
+  errors %>%
+    dplyr::filter(!is.na(reel_frequentation) & !is.na(reel_commandes) & !is.na(prevision_frequentation))
+}
+
+get_dates_min_max <- function(errors) {
+  errors %>%
+    dplyr::summarise(min = min(Date),
+                     max = max(Date))
+}
+
+average_errors <- function(errors) {
+  errors %>%
+    dplyr::group_by(type) %>%
+    dplyr::summarise(mean_error = mean(Erreur, na.rm = TRUE))
+}
+
+pivot_errors_to_plot <- function(errors) {
+  errors %>%
+    dplyr::select(Date, Agents = erreur_frequentation_agents, Modele = erreur_frequentation_modele) %>%
+    tidyr::pivot_longer(-Date, names_to = "type", values_to = "Erreur")
+}
 
 
 # UI ----------------------------------------------------------------------
@@ -744,6 +796,7 @@ server <- function(session, input, output) {
     prev <- reactivePoll(5000, session, # Previsions
                          function() check_results_fresh(), 
                          function() load_results()) 
+  # dt <- reactive({ load_traindata() })
     dt <- reactivePoll(5000, session, # training data
                        function() check_traindata_fresh(), 
                        function() load_traindata()) 
@@ -869,6 +922,27 @@ server <- function(session, input, output) {
                     cafet = input$select_cafet)
       
     })
+    
+
+# Reactive values for error computation -----------------------------------
+
+    all_errors <- reactive({ 
+      compute_errors(dt = merged_dt(), strikes = dt()$strikes) %>%
+        keep_dates_with_both_prevs_and_freqs() 
+    })
+    
+    error_date_range <- reactive({ all_errors() %>% get_dates_min_max() })
+    
+    pivoted_errors_school <- reactive({ all_errors() %>% pivot_errors_to_plot() })
+    
+    pivoted_errors_global <- reactive({ 
+      all_errors() %>%
+        filter_errors(global = TRUE) %>%
+        pivot_errors_to_plot() 
+    })
+    
+    error_means_school <- reactive({ pivoted_errors_school() %>% average_errors() })
+    error_means_global <- reactive({ pivoted_errors_global() %>% average_errors() })    
     
     # Navigation - bouton "Après" ---------------------------------------------
     
@@ -1109,8 +1183,8 @@ server <- function(session, input, output) {
     observeEvent(input$add_effs_real_od, {
         httr::GET(freq_od, # httr_progress(waitress_od),
                   httr::write_disk(freq_od_temp_loc, overwrite = TRUE))
-      freqs <- dt()$freqs # %>%
-        # dplyr::mutate(site_id = as.character(site_id))
+      freqs <- dt()$freqs %>%
+        dplyr::mutate(site_id = as.character(site_id))
         to_add <- arrow::read_delim_arrow(freq_od_temp_loc, delim = ";",
                                           col_select = c(
                                               site_id, site_type, date, 
@@ -1212,7 +1286,7 @@ server <- function(session, input, output) {
           dplyr::select(date = "DATPLGPRE", rang = "ORDRE_LIBCATFIT", 
                         plat = "LIBCLIFIT") %>%
           unique() %>%
-          # arrange(date, rang) %>% # nicer to inspect the table this way
+          arrange(date, rang) %>% # nicer to inspect the table this way
           dplyr::mutate(date = format(date, "%d/%m/%Y")) %>%
           dplyr::filter(!(date %in% dt()$menus$date)) 
         dplyr::bind_rows(dt()$menus, new_menus) %>%
@@ -1233,7 +1307,6 @@ server <- function(session, input, output) {
     observeEvent(input$add_menus, {
       file_in <- input$add_menus
       new_menus  <- arrow::read_parquet(file_in$datapath) %>%
-      # new_menus <- arrow::read_parquet("menus.parquet") %>%
           dplyr::filter(LIBPRE == "DEJEUNER" & LIBCATFIT != "PAIN") %>%
           dplyr::select(date = "DATPLGPRE", rang = "ORDRE_LIBCATFIT", 
                         plat = "LIBCLIFIT") %>%
@@ -1465,6 +1538,18 @@ server <- function(session, input, output) {
                                                 na.rm = TRUE)))
     })
       
+    all_errors <- reactive({ compute_errors(dt = merged_dt(), strikes = dt()$strikes) })
+    
+    output$error_by_school2 <- renderPlot({ 
+      pivoted_errors_school() %>%
+        ggplot2::ggplot(ggplot2::aes(x = Erreur)) + 
+        ggplot2::geom_density(ggplot2::aes(y = ..count.., color = type)) +
+        ggplot2::geom_vline(ggplot2::aes(xintercept = mean_error, color = type), linetype = "dashed",
+                            data = error_means_school()) +
+        ggplot2::labs(title = "Erreurs de prédiction quotidiennes par cantine",
+                      x = "Erreur de prédiction : densité (courbe) et moyenne (pointillés)",
+                      y = "Occurence (densité lissée)")
+    })
     
     output$error_by_school <- renderPlot({ 
      consolidated() %>%
@@ -1496,7 +1581,17 @@ server <- function(session, input, output) {
                                                 na.rm = TRUE)))
     })
       
-
+    output$error_global2 <- renderPlot({ 
+      pivoted_errors_global() %>%
+        ggplot2::ggplot(ggplot2::aes(x = Erreur)) + 
+        ggplot2::geom_density(ggplot2::aes(y = ..count.., color = type)) +
+        ggplot2::geom_vline(ggplot2::aes(xintercept = mean_error, color = type), linetype = "dashed",
+                            data = error_means_global()) +
+        ggplot2::labs(title = "Erreurs de prédiction quotidiennes au global",
+                      x = "Erreur de prédiction : densité (courbe) et moyenne (pointillés)",
+                      y = "Occurence (densité lissée)")
+    })
+    
     output$error_global <- renderPlot({ global() %>%
         dplyr::group_by(type) %>%
         ggplot2::ggplot(ggplot2::aes(x = `Erreur de prédiction`)) +
