@@ -198,7 +198,7 @@ def add_statistical_features(all_data):
     compute statistical features using ratio, means etc
     """
     # TODO improve filtering here and remove NANs
-    remove_real_lines = all_data[(all_data["annee_scolaire"] != "2021-2022")]
+    remove_real_lines = all_data[(all_data["year"] != "2020") & (all_data["annee_scolaire"] != "2020-2021") & (all_data["annee_scolaire"] != "2021-2022")]
     # calculus
     remove_real_lines["frequentation_prevue"] = remove_real_lines["prevision"] / remove_real_lines["effectif"]
     remove_real_lines["frequentation_reel"] = remove_real_lines["reel"] / remove_real_lines["effectif"]
