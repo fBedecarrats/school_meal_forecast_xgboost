@@ -1,0 +1,128 @@
+---
+title: "Incidence du type de menus sur la fréquentation des cantines à Nantes"
+format:
+  html:
+    theme: default
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  warning: false
+---
+
+On s'interroge sur l'incidence de la composition du menu sur la fréquentation des écoles. En première approche, on récupère l'ensemble des données de fréquentation depuis 2012. Afin de tenir compte de l'évolution sur cette durée, on analyse deux périodes en parallèle :
+
+- septembre 2012 à décembre 2019, et 
+- octobre 2019 à décembre 2021
+
+On effectue une première représentation des données.
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+library(cowplot)
+library(knitr)
+library(kableExtra)
+# On charge 2 jeux de données : octobre 2016 à décembre 2021
+dt1621 <- read_csv("output/staging/prepared_data_2016-10-01_2021-12-31.csv")
+# et septembre 2012 à décembre 2019
+dt1219 <- read_csv("output/staging/prepared_data_2012-09-01_2019-12-31.csv")
+vacances <- read_csv("data/calculators/vacances.csv") %>% 
+  mutate(intervalle = interval(date_debut+1, date_fin))
+
+prep_smr <- function(x) {
+  ref_time <- paste0(min(x$year), "-", max(x$year -1))
+  x %>% # On enlève les jours pour lesquels on n'a pas de menu 
+    filter(wednesday == 0 & greve == 0 & info_menu == 1) %>%
+    group_by(date_str, greve, poisson, porc, viande_sans_porc) %>%
+    summarise(reel = sum(reel, na.rm = TRUE),
+              effectif = sum(effectif, na.rm = TRUE)) %>%
+    filter(effectif > 0 & reel > 12000) %>%
+    mutate(part_freq = reel / effectif) %>%
+    mutate(type = ifelse(poisson == 1, "poisson", 
+                         ifelse(viande_sans_porc == 1, "autre viande",
+                                ifelse(porc == 1, "porc", "vegetarien"))),
+           type = factor(type, levels = c("poisson", "vegetarien", "porc",
+                                          "autre viande")),
+           ref_time = ref_time,
+           lundi = ifelse(wday(date_str) == 2, 1, 0),
+           mardi = ifelse(wday(date_str) == 3, 1, 0),
+           jeudi = ifelse(wday(date_str) == 5, 1, 0),
+           vendredi = ifelse(wday(date_str) == 6, 1, 0)) %>%
+    filter(any(date_str %within% vacances$intervalle) == FALSE)
+} 
+
+# On applique ce traitement préparatoire aux 2 jeux de données
+dt1621_prep <- prep_smr(dt1621)
+dt1219_prep <- prep_smr(dt1219)
+
+test <- dt1621_prep %>%
+  mutate(en_vac = any(date_str %within% vacances$intervalle))
+
+
+
+box <- bind_rows(dt1621_prep, dt1219_prep) %>%
+  ggplot(aes(x = type, y = reel)) + 
+  geom_boxplot() + 
+  facet_grid(cols = vars(ref_time))
+
+
+time <- bind_rows(dt1621_prep, dt1219_prep) %>%
+  ggplot(aes(x = date_str, y = reel)) + 
+  geom_line() + 
+  facet_grid(cols = vars(ref_time)) +
+  ggtitle("Description des données")
+
+plot_grid(time, box, ncol = 1)
+```
+
+Le graphique ci-dessus est un diagramme en boîte qui sert à représenter la variabilité d'une donnée. Il se lit de la manière suivante : la ligne horizontale au centre de la boîte correspond à la médiane (on a autant de cas au-dessus qu'en dessous). Le haut et le bas de la boîte blanche englobent 50% des résultats et la ligne verticale englobe 90% des résultats. Les valeurs très éloignées sont représentées par des points. On remarque sur ce graphique que les jours avec la plus forte fréquentation sont ceux avec poisson, suivi des menus végétarien, puis des repas avec porc et enfin 
+On réalise une série de régressions linéaires pour analyser la contribution de la composition des menus sur la fréquentation réelle enregistrée.
+
+```{r}
+tidymodels_prefer()
+
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>%
+  set_engine("lm")
+
+lm_fit1219_freq <- lm_spec %>%
+  fit(reel ~ poisson + porc + viande_sans_porc, data = dt1219_prep)
+
+lm_fit1219_part <- lm_spec %>%
+  fit(part_freq ~ poisson + porc + viande_sans_porc, data = dt1219_prep)
+
+lm_fit1621_freq <- lm_spec %>%
+  fit(reel ~ poisson + porc + viande_sans_porc, data = dt1621_prep)
+
+lm_fit1621_part <- lm_spec %>%
+  fit(part_freq ~ poisson + porc + viande_sans_porc, data = dt1621_prep)
+
+freq_deter <- select(tidy(lm_fit1219_freq), term, convives_2012_2019 = estimate) %>%
+   right_join(select(tidy(lm_fit1219_part), term, ratio_freq_2012_2019 = estimate),
+              by = "term") %>%
+  right_join(select(tidy(lm_fit1621_freq), term, convives_2016_2021 = estimate),
+             by = "term") %>%
+   right_join(select(tidy(lm_fit1621_part), term, ratio_2016_2021 = estimate),
+             by = "term") %>%
+  mutate(across(starts_with("convives"), ~ round(.x)),
+         across(starts_with("ratio"), ~ paste(round(.x*100, 1), "%")),
+         term = ifelse(term == "(Intercept)", "Référence (végétarien)", 
+                     paste("Avec", term)), 
+                     term))
+
+names(freq_deter) <- c("Menus", "Nb convives", "Part élèves", 
+                       "Nb convives", "Part élèves")
+kable(freq_deter, align = "l") %>%
+  kable_styling(full_width = T) %>%
+  kable_styling(position = "left") %>%
+  add_header_above(c(" " = 1, "2012-2019" = 2, "2016-2021" = 2))
+```
+
+Ce tableau résume l'a contribution l'incidence de la composition des menus sur le nombre de convives réellement enregistrés quotidiennement. On a exclu du périmètre étudié les grèves, mercredis et tous les jours avec moins de 12000 convives (anomalies probables). On observe que sur chacune des deux périodes, une moyenne de 71,9% des enfants inscrits venant à la cantines les jours de repas végératien. Cette moyenne est restée stable d'une période étudiée à l'autre, passant de 13619 convives entre 2012 et 2019 à 14348 convives entre 2016 et 2021. En moyenne, la présence de poisson au menu augmente de 1,5% la fréquentation, toute écoles confondues. La fréquentation diminue en revanche avec la présence de viande, et cette diminution va croissant. Sur 2016-2018, on a 1,3% d'inscrits en moins pour des repas avec porc, correspondant en moyenne à 312 élèves en moins. Pour de la viande autre que le porc, on observe moins 2,4% d'élèves inscrits soit 538 élèves en moins en moyenne par rapport à un repas végétarien. Rappelons que pendant la période considérée, chaque menu avec porc s'accompagne d'une alternative sans porc.
+
+**Mises en gardes importantes :** 
+
+- Cette analyse et préliminaire et doit encore être affinée. En particulier, elle ne tient pas compte du jour de la semaine car la composition du menu est trop dépendante du jour de la semaine pour être analysée séparément. Il est donc possible qu'une partie de la variabilité observée et attribuée au plat soit en fait due au jour de la semaine. Une approche plus sophistiquée (dite "bayésienne") peut être tentée pour distinguer l'effet jour de l'effet menu, mais cela requerrait plus de temps pour des résultats incertains.
+- Les résultats affichés ci-dessous sont des moyennes sur l'ensemble de la période considérée, ils ne tiennent pas compte de la variabilité importante observée d'un jour à l'autre en fonction d'effets de calendrier ou menus exceptionnels ou d'ingrédients spéciaux dans les menus (frites, pâtisseries, etc.).
