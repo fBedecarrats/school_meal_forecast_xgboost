@@ -91,10 +91,10 @@ lm_fit1219_freq <- lm_spec %>%
   fit(reel ~ poisson + porc + viande_sans_porc + bio, data = dt1219_prep)
 
 lm_fit1219_part <- lm_spec %>%
-  fit(part_freq ~ poisson + porc + viande_sans_porc, data = dt1219_prep)
+  fit(part_freq ~ poisson + porc + viande_sans_porc + bio, data = dt1219_prep)
 
 lm_fit1621_freq <- lm_spec %>%
-  fit(reel ~ poisson + porc + viande_sans_porc, data = dt1621_prep)
+  fit(reel ~ poisson + porc + viande_sans_porc + bio, data = dt1621_prep)
 
 lm_fit1621_part <- lm_spec %>%
   fit(part_freq ~ poisson + porc + viande_sans_porc + bio, data = dt1621_prep)
